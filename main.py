@@ -113,7 +113,6 @@ def ComputeRHS(u):
 
                 temp[0]     -=  ComputeReferenceFlux(detJ, invJ, beta, ustar[0])[0] #detJ*invJ[0,0]*beta1*ustar[0]
                 temp[order] +=  ComputeReferenceFlux(detJ, invJ, beta, ustar[1])[0]
-                # temp = -temp + detJ*invJ[0][0]*beta1*ustar*( G[-1][i] - G[0][i] );
 
                 q[ix,iy,i,:] = np.matmul(invMass,temp)
 
@@ -147,6 +146,30 @@ def ComputeDt():
 
     dt = cflConst*dnode_min*h_min/waveSpeedMax;
     return dt;
+
+def ComputeJacobian(order,totalNumOfEls, beta, invMassMatrix, DiffMatrix):
+    Ip = np.eye(order+1)
+    In = np.eye(totalNumOfEls)
+    lineDx = np.matmul(invMassMatrix,-DiffMatrix)
+    elementDx = np.kron(Ip,lineDx)
+    elementDy = np.kron(lineDx, Ip)
+    globalDx  = detJ*beta[0]*np.kron(In, elementDx)/dx
+    # elementDy = np.diag(np.diag(elementDx))
+    #
+    # for i in range(1,order+1):
+    #     du = np.diag(elementDx,k=i)
+    #     db = np.diag(elementDx, k=-i)
+    #     elementDy += np.diag(du[du!=0],k=i*(order+1))
+    #     elementDy += np.diag(db[db!=0],k=-i*(order+1))
+
+    globalDy = detJ*beta[1]*np.kron(In, elementDy)/dy
+    #print("global dy = ", globalDy)
+    globalDif = globalDx + globalDy
+    fig, ax = plt.subplots()
+    ax.spy(globalDif)
+    plt.show()
+
+    return globalDx, globalDy;
 
 def RK4(currentTime, uold):
     q_curved = np.zeros([numOfElx, numOfEly, order+1, order+1])
@@ -198,7 +221,7 @@ def PlotSolution(x,y,usoln):
 if __name__ == "__main__":
     # Parameters for simulation
     order = 2;
-    numOfElx = 1; numOfEly = 2;
+    numOfElx = 2; numOfEly = 2;
     beta1 = 1; beta2 = 1;
     beta = np.array([beta1,beta2]);
     cflConst = 1.0; tmax = 0.5;
@@ -222,39 +245,49 @@ if __name__ == "__main__":
 
     # Constructing Local Operators
     Mass = np.matmul( np.matmul(np.transpose(G), W), G )
-    print(Mass)
     invMass = np.linalg.inv(Mass)
-    #Diff  = np.matmul( np.matmul(np.transpose(D), W), G ) # This only works for linear flux
+    Diff  = np.matmul( np.matmul(np.transpose(D), W), G ) # This only works for linear flux
 
-    # uold = np.ones( (numOfElx, numOfEly, order+1, order+1) )
+    Dx, Dy = ComputeJacobian(order, numOfElx*numOfEly, beta, invMass, Diff)
+
+    #uold = np.arange(numOfElx*numOfEly*(order+1)*(order+1)).reshape([numOfElx,numOfEly,order+1,order+1])
+    uold = np.ones([numOfElx,numOfEly,order+1,order+1])
+
+    qmat = np.zeros( numOfElx*numOfEly*(order+1)*(order+1) )
+    rmat = np.zeros( numOfEly*numOfEly*(order+1)*(order+1) )
+
+    qmat = np.matmul(Dx, uold.reshape([numOfElx*numOfEly*(order+1)*(order+1)]))
+    rmat = np.matmul(Dy, uold.reshape([numOfElx*numOfEly*(order+1)*(order+1)]))
+
     q = np.zeros( (numOfElx, numOfEly, order+1, order+1) )
-    r = np.zeros( (numOfElx, numOfEly, order+1, order+1) )
-
-    # q,r = ComputeRHS(uinit);
-    currentTime = 0;
-
+    r = np.zeros( (numOfEly, numOfEly, order+1, order+1) )
 
     q,r = ComputeRHS(uold);
 
+    currentTime = 0;
 
 
-    while currentTime < tmax:
-        # print("time = ", currentTime)
-        dt = ComputeDt()
-        if currentTime + dt > tmax:
-            dt = tmax - currentTime;
-
-        unew = RK4(currentTime, uold)
-
-        uold = unew;
-        currentTime += dt;
-
-        #PlotSolution(x,y,uold)
-
-    fig = plt.figure()
-    PlotSolution(x,y,uold)
-    plt.xlabel('$x$')
-    plt.ylabel('$y$')
-    plt.show()
+    # q,r = ComputeRHS(uold);
+    #
+    #
+    #
+    # while currentTime < tmax:
+    #     # print("time = ", currentTime)
+    #     dt = ComputeDt()
+    #     if currentTime + dt > tmax:
+    #         dt = tmax - currentTime;
+    #
+    #     unew = RK4(currentTime, uold)
+    #
+    #     uold = unew;
+    #     currentTime += dt;
+    #
+    #     #PlotSolution(x,y,uold)
+    #
+    # fig = plt.figure()
+    # PlotSolution(x,y,uold)
+    # plt.xlabel('$x$')
+    # plt.ylabel('$y$')
+    # plt.show()
     # print("q = ", q)
     # print("r = ", r)
