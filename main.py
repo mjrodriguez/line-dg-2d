@@ -38,14 +38,14 @@ def GenerateGrid(node, xdom,ydom,numOfElx,numOfEly):
 ###############################################################
 
 ####################################################################
-## Computing Flux and modified Flux unstructured mesh
+## Computing Curved Flux and Reference Flux unstructured mesh
 ####################################################################
 def Flux(beta, U):
     Fx = beta[0]*U
     Fy = beta[1]*U
     return Fx, Fy
 
-def ComputeModifiedFlux(detJ, invJ, beta,U):
+def ComputeReferenceFlux(detJ, invJ, beta,U):
     Fx, Fy = Flux(beta,U)
     modFlux = np.array([np.transpose(Fx), np.transpose(Fy)])
 
@@ -59,6 +59,23 @@ def ComputeModifiedFlux(detJ, invJ, beta,U):
         modFy = np.transpose(modFlux[1,:])
     return modFx, modFy
 
+def ComputeCurvedFlux(detJ, defGrad, refFlux):
+    # defGrad = deformation gradient of grid
+    Flux = np.dot(defGrad,refFlux)/detJ
+    return Flux;
+
+def ComputeCurvedDerivatives(q,r):
+    qmod = np.zeros([numOfElx, numOfEly, order+1, order+1])
+    rmod = np.zeros([numOfElx, numOfEly, order+1, order+1])
+
+    for ix in range(0,numOfElx):
+        for iy in range(0,numOfEly):
+            for i in range(0,order+1):
+                for j in range(0, order+1):
+                    refFlux = ComputeCurvedFlux( detJ, J, np.array( [q[ix,iy,i,j], r[ix,iy,i,j]] ) )
+                    qmod[ix,iy,i,j] = refFlux[0];
+                    rmod[ix,iy,i,j] = refFlux[1];
+    return qmod, rmod
 
 def Upwind(waveSpeed, uL,uR):
     if (waveSpeed > 0):
@@ -81,7 +98,7 @@ def ComputeRHS(u):
                 # Computing u and flux at the quadrature points
                 U = np.matmul( G, u[ix,iy,i,:] )
                 # Fx = detJ*invJ*Flux(beta1,U)
-                Fx, Fy = ComputeModifiedFlux(detJ, invJ, beta, U)
+                Fx, Fy = ComputeReferenceFlux(detJ, invJ, beta, U)
                 temp = -np.matmul( np.matmul(np.transpose(D),W), Fx)
 
                 #print(temp)
@@ -94,8 +111,8 @@ def ComputeRHS(u):
                     ustar[0] = Upwind(beta[0], u[ix-1,iy,i,order], u[ix,iy,i,0])
                     ustar[1] = Upwind(beta[0], u[ix,iy,i,order], u[ix+1,iy,i,0])
 
-                temp[0]     -=  ComputeModifiedFlux(detJ, invJ, beta, ustar[0])[0] #detJ*invJ[0,0]*beta1*ustar[0]
-                temp[order] +=  ComputeModifiedFlux(detJ, invJ, beta, ustar[1])[0]
+                temp[0]     -=  ComputeReferenceFlux(detJ, invJ, beta, ustar[0])[0] #detJ*invJ[0,0]*beta1*ustar[0]
+                temp[order] +=  ComputeReferenceFlux(detJ, invJ, beta, ustar[1])[0]
                 # temp = -temp + detJ*invJ[0][0]*beta1*ustar*( G[-1][i] - G[0][i] );
 
                 q[ix,iy,i,:] = np.matmul(invMass,temp)
@@ -105,7 +122,7 @@ def ComputeRHS(u):
             for j in range(0,order+1):
                 ustar = np.zeros(2)
                 U = np.matmul(G, u[ix,iy,:,j])
-                Fx, Fy = ComputeModifiedFlux(detJ, invJ, beta, U)
+                Fx, Fy = ComputeReferenceFlux(detJ, invJ, beta, U)
                 temp = -np.matmul( np.matmul(np.transpose(D), W), Fy )
 
                 if (iy + 1 >= numOfEly):
@@ -116,8 +133,8 @@ def ComputeRHS(u):
                     ustar[0] = Upwind(beta[1], u[ix,iy-1,order,j], u[ix,iy,0,j] )
                     ustar[1] = Upwind(beta[1], u[ix,iy,order,j], u[ix,iy+1,0,j] )
 
-                temp[0]     -= ComputeModifiedFlux(detJ, invJ, beta, ustar[0])[1]
-                temp[order] += ComputeModifiedFlux(detJ, invJ, beta, ustar[1])[1]
+                temp[0]     -= ComputeReferenceFlux(detJ, invJ, beta, ustar[0])[1]
+                temp[order] += ComputeReferenceFlux(detJ, invJ, beta, ustar[1])[1]
 
                 r[ix,iy,:,j] = np.matmul(invMass, temp)
 
@@ -132,24 +149,31 @@ def ComputeDt():
     return dt;
 
 def RK4(currentTime, uold):
+    q_curved = np.zeros([numOfElx, numOfEly, order+1, order+1])
+    r_curved = np.zeros([numOfElx, numOfEly, order+1, order+1])
+
     # Stage 1
     q,r = ComputeRHS(uold);
-    R   = -(q/dx+r/dy);
+    q_curved, r_curved = ComputeCurvedDerivatives(q,r)
+    R   = -(q_curved + r_curved)
     k1 = dt*R
 
     #Stage 2
     q,r = ComputeRHS(uold + 0.5*k1)
-    R   = -(q/dx+r/dy);
+    q_curved, r_curved = ComputeCurvedDerivatives(q,r)
+    R   = -(q_curved + r_curved)
     k2  = dt*R
 
     #Stage 3
     q,r = ComputeRHS(uold + 0.5*k2);
-    R   = -(q/dx+r/dy);
+    q_curved, r_curved = ComputeCurvedDerivatives(q,r)
+    R   = -(q_curved + r_curved)
     k3  = dt*R;
 
     #Stage 4
     q,r = ComputeRHS(uold + k3);
-    R   = -(q/dx+r/dy);
+    q_curved, r_curved = ComputeCurvedDerivatives(q,r)
+    R   = -(q_curved + r_curved)
     k4  = dt*R;
 
     unew = uold + ( k1 + 2*k2 + 2*k3 + k4)/6.0;
@@ -173,23 +197,23 @@ def PlotSolution(x,y,usoln):
 
 if __name__ == "__main__":
     # Parameters for simulation
-    order = 5;
-    numOfElx = 5; numOfEly = 5;
+    order = 2;
+    numOfElx = 1; numOfEly = 2;
     beta1 = 1; beta2 = 1;
     beta = np.array([beta1,beta2]);
     cflConst = 1.0; tmax = 0.5;
 
     # Nodes and quadrature points
     xnode = gl.lglnodes(order)
-    xint  = gl.lglnodes(30)
+    xint  = gl.lglnodes(3*order+1)
     W     = np.diag(xint[1])
     G,D   = gl.lagint(xnode[0], xint[0])
 
     # Grid "generation" and initial conditiion
     uold,x,y,dx,dy = GenerateGrid(xnode[0], np.array([0,1]), np.array([0,1]), numOfElx, numOfEly)
 
-    fig = plt.figure()
-    PlotSolution(x,y,uold)
+    # fig = plt.figure()
+    # PlotSolution(x,y,uold)
 
     J = np.diag([dx,dy])
     invJ = np.linalg.inv(J)
@@ -198,8 +222,9 @@ if __name__ == "__main__":
 
     # Constructing Local Operators
     Mass = np.matmul( np.matmul(np.transpose(G), W), G )
+    print(Mass)
     invMass = np.linalg.inv(Mass)
-    Diff  = np.matmul( np.matmul(np.transpose(D), W), G ) # This only works for linear flux
+    #Diff  = np.matmul( np.matmul(np.transpose(D), W), G ) # This only works for linear flux
 
     # uold = np.ones( (numOfElx, numOfEly, order+1, order+1) )
     q = np.zeros( (numOfElx, numOfEly, order+1, order+1) )
@@ -211,10 +236,10 @@ if __name__ == "__main__":
 
     q,r = ComputeRHS(uold);
 
-    fig = plt.figure()
+
 
     while currentTime < tmax:
-        print("time = ", currentTime)
+        # print("time = ", currentTime)
         dt = ComputeDt()
         if currentTime + dt > tmax:
             dt = tmax - currentTime;
@@ -226,6 +251,7 @@ if __name__ == "__main__":
 
         #PlotSolution(x,y,uold)
 
+    fig = plt.figure()
     PlotSolution(x,y,uold)
     plt.xlabel('$x$')
     plt.ylabel('$y$')
