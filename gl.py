@@ -14,7 +14,6 @@ def lglnodes(N):
         P[:,1] = x
 
         for k in range(2,N+1):
-            print(k)
             P[:,k] = ((2*k-1)*x*P[:,k-1] - (k-1)*P[:,k-2])/float(k)
 
         x = xold - (x*P[:,N] - P[:,N-1]) / (N1*P[:,N])

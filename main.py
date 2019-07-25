@@ -147,13 +147,13 @@ def ComputeDt():
     dt = cflConst*dnode_min*h_min/waveSpeedMax;
     return dt;
 
-def ComputeJacobian(order,totalNumOfEls, beta, invMassMatrix, DiffMatrix):
+def ComputeJacobian(order,totalNumOfEls, dFdu, invMassMatrix, DiffMatrix):
     Ip = np.eye(order+1)
     In = np.eye(totalNumOfEls)
     lineDx = np.matmul(invMassMatrix,-DiffMatrix)
     elementDx = np.kron(Ip,lineDx)
     elementDy = np.kron(lineDx, Ip)
-    globalDx  = detJ*beta[0]*np.kron(In, elementDx)/dx
+    globalDx  = dFdu[0]*np.kron(In, elementDx)
     # elementDy = np.diag(np.diag(elementDx))
     #
     # for i in range(1,order+1):
@@ -161,10 +161,52 @@ def ComputeJacobian(order,totalNumOfEls, beta, invMassMatrix, DiffMatrix):
     #     db = np.diag(elementDx, k=-i)
     #     elementDy += np.diag(du[du!=0],k=i*(order+1))
     #     elementDy += np.diag(db[db!=0],k=-i*(order+1))
-
-    globalDy = detJ*beta[1]*np.kron(In, elementDy)/dy
+    globalDy = dFdu[1]*np.kron(In, elementDy)
     #print("global dy = ", globalDy)
     globalDif = globalDx + globalDy
+
+
+    # Implement boundary element conditions
+    for ix in range(0,numOfElx):
+        for iy in range(0,numOfEly):
+            for i in range(0,order+1):
+                if (ix + 1 >= numOfElx):
+                    # assuming periodic boundary conditions
+                    if (beta[0] >= 0):
+                        globalDif[map(ix,iy,i,0),map(ix-1,iy,i,order)] = 1
+                        globalDif[map(ix,iy,i,0),map(ix,iy,i,0)] = 0.5;
+
+                        globalDif[map(0,iy,i,0),map(ix,iy,i,order)] = 1
+                        globalDif[map(0,iy,i,0),map(ix,iy,i,order)] = 0.5
+                    else:
+                        globalDif[map(ix,iy,i,0),map(ix-1,iy,i,order)] = 0.5
+                        globalDif[map(ix,iy,i,0),map(ix,iy,i,0)] = 1;
+
+                        globalDif[map(0,iy,i,0),map(ix,iy,i,order)] = 0.5
+                        globalDif[map(0,iy,i,0),map(ix,iy,i,order)] = 1
+
+                else:
+                     if (beta[0] >= 0):
+                         globalDif[map(ix,iy,i,0),map(ix-1,iy,i,order)] = 1
+                         globalDif[map(ix,iy,i,0),map(ix,iy,i,0)] = 0.5;
+
+                         globalDif[map(ix+1,iy,i,0),map(ix,iy,i,order)] = 1
+                         globalDif[map(ix+1,iy,i,0),map(ix+1,iy,i,0)] = 0.5
+                     else:
+                         globalDif[map(ix,iy,i,0),map(ix-1,iy,i,order)] = 0.5
+                         globalDif[map(ix,iy,i,0),map(ix,iy,i,0)] = 1;
+
+                         globalDif[map(ix+1,iy,i,0),map(ix,iy,i,order)] = 0.5
+                         globalDif[map(ix+1,iy,i,0),map(ix+1,iy,i,0)] = 1
+                #
+                # temp[0]     -=  ComputeReferenceFlux(detJ, invJ, beta, ustar[0])[0] #detJ*invJ[0,0]*beta1*ustar[0]
+                # temp[order] +=  ComputeReferenceFlux(detJ, invJ, beta, ustar[1])[0]
+
+            # for j in range(0,order+1):
+
+
+
+
     fig, ax = plt.subplots()
     ax.spy(globalDif)
     plt.show()
@@ -217,11 +259,15 @@ def PlotSolution(x,y,usoln):
 
     plt.pause(0.05)
 
+def map(ielx,jely, inode, jnode):
+    #need to figure out F ordering...
+    index = jnode + inode*(order+1) + jely*(order+1)**2 + ielx*numOfEly*(order+1)**2;
+    return index;
 
 if __name__ == "__main__":
     # Parameters for simulation
     order = 2;
-    numOfElx = 2; numOfEly = 2;
+    numOfElx = 2; numOfEly = 1;
     beta1 = 1; beta2 = 1;
     beta = np.array([beta1,beta2]);
     cflConst = 1.0; tmax = 0.5;
@@ -248,7 +294,9 @@ if __name__ == "__main__":
     invMass = np.linalg.inv(Mass)
     Diff  = np.matmul( np.matmul(np.transpose(D), W), G ) # This only works for linear flux
 
-    Dx, Dy = ComputeJacobian(order, numOfElx*numOfEly, beta, invMass, Diff)
+    betaTilde = detJ*np.dot(J,beta)
+
+    Dx, Dy = ComputeJacobian(order, numOfElx*numOfEly, betaTilde, invMass, Diff)
 
     #uold = np.arange(numOfElx*numOfEly*(order+1)*(order+1)).reshape([numOfElx,numOfEly,order+1,order+1])
     uold = np.ones([numOfElx,numOfEly,order+1,order+1])
