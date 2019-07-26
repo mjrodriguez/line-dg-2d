@@ -78,14 +78,24 @@ def ComputeCurvedDerivatives(q,r):
     return qmod, rmod
 
 def Upwind(waveSpeed, uL,uR):
-    if (waveSpeed > 0):
+    # return 0.0
+    if (waveSpeed >= 0):
         ustar = uL
     elif (waveSpeed < 0):
         ustar = uR
 
     return ustar
+def Dupwind(waveSpeed, uL_index, uR_index):
+    if (waveSpeed >= 0):
+        ustar_index = uL_index;
+    elif(waveSpeed < 0):
+        ustar_index = uR_index;
 
-def ComputeRHS(u):
+    return ustar_index;
+
+def ComputeRHS(numOfElx, numOfEly, detJ, invJ, G, D, W, beta, u):
+    q = np.zeros( (numOfElx, numOfEly, order+1, order+1) )
+    r = np.zeros( (numOfElx, numOfEly, order+1, order+1) )
 
     # Construct RHS of equation
     for ix in range(0,numOfElx):
@@ -125,7 +135,7 @@ def ComputeRHS(u):
                 temp = -np.matmul( np.matmul(np.transpose(D), W), Fy )
 
                 if (iy + 1 >= numOfEly):
-                    # assuming periodic boundary conditions
+                    # periodic boundary conditions
                     ustar[0] = Upwind(beta[1], u[ix,iy-1,order,j], u[ix,iy,0,j])
                     ustar[1] = Upwind(beta[1], u[ix,iy,order,j], u[ix,0,0,j] )
                 else:
@@ -134,15 +144,16 @@ def ComputeRHS(u):
 
                 temp[0]     -= ComputeReferenceFlux(detJ, invJ, beta, ustar[0])[1]
                 temp[order] += ComputeReferenceFlux(detJ, invJ, beta, ustar[1])[1]
-
                 r[ix,iy,:,j] = np.matmul(invMass, temp)
 
     return q,r
 
-def ComputeDt():
-    dnode_min    = np.amin(np.diff(xnode[0]))
-    h_min        = np.amin([dx,dy])
-    waveSpeedMax = np.amax([beta1,beta2])
+def ComputeDt(nodes,hx, hy, waveSpeed):
+    dnode_min    = np.amin(np.diff(nodes))
+    h_min        = np.amin([hx,hy])
+    waveSpeedMax = np.amax(waveSpeed)
+    print("in computeDt")
+    print(h_min, dnode_min, waveSpeedMax)
 
     dt = cflConst*dnode_min*h_min/waveSpeedMax;
     return dt;
@@ -150,93 +161,87 @@ def ComputeDt():
 def ComputeJacobian(order,totalNumOfEls, dFdu, invMassMatrix, DiffMatrix):
     Ip = np.eye(order+1)
     In = np.eye(totalNumOfEls)
-    lineDx = np.matmul(invMassMatrix,-DiffMatrix)
+    lineDx = np.matmul(invMassMatrix, -DiffMatrix)
     elementDx = np.kron(Ip,lineDx)
     elementDy = np.kron(lineDx, Ip)
-    globalDx  = dFdu[0]*np.kron(In, elementDx)
-    # elementDy = np.diag(np.diag(elementDx))
-    #
-    # for i in range(1,order+1):
-    #     du = np.diag(elementDx,k=i)
-    #     db = np.diag(elementDx, k=-i)
-    #     elementDy += np.diag(du[du!=0],k=i*(order+1))
-    #     elementDy += np.diag(db[db!=0],k=-i*(order+1))
-    globalDy = dFdu[1]*np.kron(In, elementDy)
-    #print("global dy = ", globalDy)
+    globalDx  = np.kron(In, elementDx)
+    globalDy  = np.kron(In, elementDy)
+
+
+    if True:
+        # Implement boundary element conditions
+        for ix in range(0,numOfElx):
+            for iy in range(0,numOfEly):
+                for i in range(0,order+1):
+
+                    # Computes the derivative in the x-direction
+                    if (ix + 1 >= numOfElx):
+                        # assuming periodic boundary conditions
+                        idx = Dupwind(beta[0], np.array([ix-1,iy,i,order]), np.array([ix,iy,i,0]) )
+                        globalDx[Index(ix,iy,i,0),Index( idx[0],idx[1], idx[2], idx[3] )] += -1
+
+                        idx = Dupwind(beta[0], np.array([ix,iy,i,order]), np.array([0,iy,i,0]) )
+                        globalDx[ Index(ix,iy,i,order), Index(idx[0],idx[1], idx[2], idx[3] ) ] += 1
+                    else:
+                        idx = Dupwind(beta[0], np.array([ix-1,iy,i,order]), np.array([ix,iy,i,0]))
+                        globalDx[Index(ix,iy,i,0),Index( idx[0],idx[1], idx[2], idx[3] )] += -1
+
+                        idx = Dupwind(beta[0], np.array([ix,iy,i,order]), np.array([ix+1,iy,i,0]))
+                        globalDx[Index(ix,iy,i,order), Index( idx[0],idx[1], idx[2], idx[3] )] += 1
+
+
+                for j in range(0,order+1):
+
+                    if (iy + 1 >= numOfEly):
+                        #assuming periodic boundary conditions
+                        idx = Dupwind(beta[1], np.array([ix,iy-1,order,j]), np.array([ix,iy,0,j]))
+                        globalDy[ Index(ix,iy,0,j), Index( idx[0],idx[1], idx[2], idx[3] ) ] += 1
+
+                        idx = Dupwind(beta[1], np.array([ix,iy,order,j]), np.array([ix,0,0,j]) )
+                        globalDy[ Index(ix,iy,order,j), Index( idx[0],idx[1], idx[2], idx[3] ) ] += 1
+                    else:
+                        idx = Dupwind(beta[1], np.array([ix,iy-1,order,j]), np.array([ix,iy,0,j]) )
+                        globalDy[ Index(ix,iy,0,j), Index( idx[0],idx[1], idx[2], idx[3] ) ] += -1
+
+                        idx = Dupwind(beta[1], np.array([ix,iy,order,j]), np.array([ix,iy+1,0,j]) )
+                        globalDy[ Index(ix,iy,order,j), Index( idx[0],idx[1], idx[2], idx[3] ) ] += 1
+
+
+    globalDx  = dFdu[0]*globalDx
+    globalDy  = dFdu[1]*globalDy
     globalDif = globalDx + globalDy
 
+    if True:
+        fig, ax = plt.subplots()
+        ax.spy(globalDif)
+        plt.show()
 
-    # Implement boundary element conditions
-    for ix in range(0,numOfElx):
-        for iy in range(0,numOfEly):
-            for i in range(0,order+1):
-                if (ix + 1 >= numOfElx):
-                    # assuming periodic boundary conditions
-                    if (beta[0] >= 0):
-                        globalDif[map(ix,iy,i,0),map(ix-1,iy,i,order)] = 1
-                        globalDif[map(ix,iy,i,0),map(ix,iy,i,0)] = 0.5;
+    return globalDif, globalDx, globalDy;
 
-                        globalDif[map(0,iy,i,0),map(ix,iy,i,order)] = 1
-                        globalDif[map(0,iy,i,0),map(ix,iy,i,order)] = 0.5
-                    else:
-                        globalDif[map(ix,iy,i,0),map(ix-1,iy,i,order)] = 0.5
-                        globalDif[map(ix,iy,i,0),map(ix,iy,i,0)] = 1;
-
-                        globalDif[map(0,iy,i,0),map(ix,iy,i,order)] = 0.5
-                        globalDif[map(0,iy,i,0),map(ix,iy,i,order)] = 1
-
-                else:
-                     if (beta[0] >= 0):
-                         globalDif[map(ix,iy,i,0),map(ix-1,iy,i,order)] = 1
-                         globalDif[map(ix,iy,i,0),map(ix,iy,i,0)] = 0.5;
-
-                         globalDif[map(ix+1,iy,i,0),map(ix,iy,i,order)] = 1
-                         globalDif[map(ix+1,iy,i,0),map(ix+1,iy,i,0)] = 0.5
-                     else:
-                         globalDif[map(ix,iy,i,0),map(ix-1,iy,i,order)] = 0.5
-                         globalDif[map(ix,iy,i,0),map(ix,iy,i,0)] = 1;
-
-                         globalDif[map(ix+1,iy,i,0),map(ix,iy,i,order)] = 0.5
-                         globalDif[map(ix+1,iy,i,0),map(ix+1,iy,i,0)] = 1
-                #
-                # temp[0]     -=  ComputeReferenceFlux(detJ, invJ, beta, ustar[0])[0] #detJ*invJ[0,0]*beta1*ustar[0]
-                # temp[order] +=  ComputeReferenceFlux(detJ, invJ, beta, ustar[1])[0]
-
-            # for j in range(0,order+1):
-
-
-
-
-    fig, ax = plt.subplots()
-    ax.spy(globalDif)
-    plt.show()
-
-    return globalDx, globalDy;
-
-def RK4(currentTime, uold):
+def RK4(currentTime, uold, numOfElx, numOfEly, detJ, invJ, G, D, W, beta):
     q_curved = np.zeros([numOfElx, numOfEly, order+1, order+1])
     r_curved = np.zeros([numOfElx, numOfEly, order+1, order+1])
 
     # Stage 1
-    q,r = ComputeRHS(uold);
+    q,r = ComputeRHS(numOfElx, numOfEly, detJ, invJ, G, D, W, beta, uold);
     q_curved, r_curved = ComputeCurvedDerivatives(q,r)
     R   = -(q_curved + r_curved)
     k1 = dt*R
 
     #Stage 2
-    q,r = ComputeRHS(uold + 0.5*k1)
+    q,r = ComputeRHS(numOfElx, numOfEly, detJ, invJ, G, D, W, beta, uold + 0.5*k1)
     q_curved, r_curved = ComputeCurvedDerivatives(q,r)
     R   = -(q_curved + r_curved)
     k2  = dt*R
 
     #Stage 3
-    q,r = ComputeRHS(uold + 0.5*k2);
+    q,r = ComputeRHS(numOfElx, numOfEly, detJ, invJ, G, D, W, beta, uold + 0.5*k2);
     q_curved, r_curved = ComputeCurvedDerivatives(q,r)
     R   = -(q_curved + r_curved)
     k3  = dt*R;
 
     #Stage 4
-    q,r = ComputeRHS(uold + k3);
+    q,r = ComputeRHS(numOfElx, numOfEly, detJ, invJ, G, D, W, beta, uold + k3);
     q_curved, r_curved = ComputeCurvedDerivatives(q,r)
     R   = -(q_curved + r_curved)
     k4  = dt*R;
@@ -259,7 +264,7 @@ def PlotSolution(x,y,usoln):
 
     plt.pause(0.05)
 
-def map(ielx,jely, inode, jnode):
+def Index(ielx,jely, inode, jnode):
     #need to figure out F ordering...
     index = jnode + inode*(order+1) + jely*(order+1)**2 + ielx*numOfEly*(order+1)**2;
     return index;
@@ -267,10 +272,10 @@ def map(ielx,jely, inode, jnode):
 if __name__ == "__main__":
     # Parameters for simulation
     order = 2;
-    numOfElx = 2; numOfEly = 1;
+    numOfElx = 2; numOfEly = 2;
     beta1 = 1; beta2 = 1;
     beta = np.array([beta1,beta2]);
-    cflConst = 1.0; tmax = 0.5;
+    cflConst = 0.8; tmax = 1;
 
     # Nodes and quadrature points
     xnode = gl.lglnodes(order)
@@ -281,8 +286,7 @@ if __name__ == "__main__":
     # Grid "generation" and initial conditiion
     uold,x,y,dx,dy = GenerateGrid(xnode[0], np.array([0,1]), np.array([0,1]), numOfElx, numOfEly)
 
-    # fig = plt.figure()
-    # PlotSolution(x,y,uold)
+
 
     J = np.diag([dx,dy])
     invJ = np.linalg.inv(J)
@@ -294,48 +298,48 @@ if __name__ == "__main__":
     invMass = np.linalg.inv(Mass)
     Diff  = np.matmul( np.matmul(np.transpose(D), W), G ) # This only works for linear flux
 
-    betaTilde = detJ*np.dot(J,beta)
+    betaTilde = detJ*np.matmul(invJ,beta)
 
-    Dx, Dy = ComputeJacobian(order, numOfElx*numOfEly, betaTilde, invMass, Diff)
+
+    globalD, Dx, Dy = ComputeJacobian(order, numOfElx*numOfEly, betaTilde, invMass, Diff)
 
     #uold = np.arange(numOfElx*numOfEly*(order+1)*(order+1)).reshape([numOfElx,numOfEly,order+1,order+1])
-    uold = np.ones([numOfElx,numOfEly,order+1,order+1])
 
+    uold = np.random.rand(numOfElx,numOfEly,order+1,order+1)
+    uold = np.ones([numOfElx,numOfEly,order+1,order+1])
     qmat = np.zeros( numOfElx*numOfEly*(order+1)*(order+1) )
     rmat = np.zeros( numOfEly*numOfEly*(order+1)*(order+1) )
 
-    qmat = np.matmul(Dx, uold.reshape([numOfElx*numOfEly*(order+1)*(order+1)]))
-    rmat = np.matmul(Dy, uold.reshape([numOfElx*numOfEly*(order+1)*(order+1)]))
+    qmat = np.matmul(Dx, uold.ravel())
+    rmat = np.matmul(Dy, uold.ravel())
 
-    q = np.zeros( (numOfElx, numOfEly, order+1, order+1) )
-    r = np.zeros( (numOfEly, numOfEly, order+1, order+1) )
+    qtrue, rtrue = ComputeRHS(numOfElx, numOfEly, detJ, invJ, G, D, W, beta, uold)
 
-    q,r = ComputeRHS(uold);
-
+    qerror = qmat - qtrue.ravel()
+    rerror = rmat - rtrue.ravel()
     currentTime = 0;
 
 
-    # q,r = ComputeRHS(uold);
-    #
-    #
-    #
-    # while currentTime < tmax:
-    #     # print("time = ", currentTime)
-    #     dt = ComputeDt()
-    #     if currentTime + dt > tmax:
-    #         dt = tmax - currentTime;
-    #
-    #     unew = RK4(currentTime, uold)
-    #
-    #     uold = unew;
-    #     currentTime += dt;
-    #
-    #     #PlotSolution(x,y,uold)
-    #
-    # fig = plt.figure()
-    # PlotSolution(x,y,uold)
-    # plt.xlabel('$x$')
-    # plt.ylabel('$y$')
-    # plt.show()
+    if False:
+        fig = plt.figure()
+        PlotSolution(x,y,uold)
+        while currentTime < tmax:
+            print("time = ", currentTime)
+            dt = ComputeDt(xnode[0], dx, dy, beta)
+            print(dt)
+            if currentTime + dt > tmax:
+                dt = tmax - currentTime;
+
+            unew = RK4(currentTime, uold, numOfElx, numOfEly, detJ, invJ, G, D, W, beta)
+
+            uold = unew;
+            currentTime += dt;
+            PlotSolution(x,y,uold)
+
+        fig = plt.figure()
+        PlotSolution(x,y,uold)
+        plt.xlabel('$x$')
+        plt.ylabel('$y$')
+        plt.show()
     # print("q = ", q)
     # print("r = ", r)
