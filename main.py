@@ -161,6 +161,8 @@ def ComputeDt(nodes,hx, hy, waveSpeed):
 def ComputeJacobian(order,totalNumOfEls, dFdu, invMassMatrix, DiffMatrix):
     Ip = np.eye(order+1)
     In = np.eye(totalNumOfEls)
+    bc = np.zeros(order+1); bc[0] = -1; bc[-1] = 1;
+    bc = np.dot(invMassMatrix, bc)
     lineDx = np.matmul(invMassMatrix, -DiffMatrix)
     elementDx = np.kron(Ip,lineDx)
     elementDy = np.kron(lineDx, Ip)
@@ -169,6 +171,7 @@ def ComputeJacobian(order,totalNumOfEls, dFdu, invMassMatrix, DiffMatrix):
 
 
     if True:
+
         # Implement boundary element conditions
         for ix in range(0,numOfElx):
             for iy in range(0,numOfEly):
@@ -178,16 +181,16 @@ def ComputeJacobian(order,totalNumOfEls, dFdu, invMassMatrix, DiffMatrix):
                     if (ix + 1 >= numOfElx):
                         # assuming periodic boundary conditions
                         idx = Dupwind(beta[0], np.array([ix-1,iy,i,order]), np.array([ix,iy,i,0]) )
-                        globalDx[Index(ix,iy,i,0),Index( idx[0],idx[1], idx[2], idx[3] )] += -1
+                        globalDx[Index(ix,iy,i,0),Index( idx[0],idx[1], idx[2], idx[3] )] += bc[0]
 
                         idx = Dupwind(beta[0], np.array([ix,iy,i,order]), np.array([0,iy,i,0]) )
-                        globalDx[ Index(ix,iy,i,order), Index(idx[0],idx[1], idx[2], idx[3] ) ] += 1
+                        globalDx[ Index(ix,iy,i,order), Index(idx[0],idx[1], idx[2], idx[3] ) ] += bc[order]
                     else:
                         idx = Dupwind(beta[0], np.array([ix-1,iy,i,order]), np.array([ix,iy,i,0]))
-                        globalDx[Index(ix,iy,i,0),Index( idx[0],idx[1], idx[2], idx[3] )] += -1
+                        globalDx[Index(ix,iy,i,0),Index( idx[0],idx[1], idx[2], idx[3] )] += bc[0]
 
                         idx = Dupwind(beta[0], np.array([ix,iy,i,order]), np.array([ix+1,iy,i,0]))
-                        globalDx[Index(ix,iy,i,order), Index( idx[0],idx[1], idx[2], idx[3] )] += 1
+                        globalDx[Index(ix,iy,i,order), Index( idx[0],idx[1], idx[2], idx[3] )] += bc[order]
 
 
                 for j in range(0,order+1):
@@ -195,16 +198,16 @@ def ComputeJacobian(order,totalNumOfEls, dFdu, invMassMatrix, DiffMatrix):
                     if (iy + 1 >= numOfEly):
                         #assuming periodic boundary conditions
                         idx = Dupwind(beta[1], np.array([ix,iy-1,order,j]), np.array([ix,iy,0,j]))
-                        globalDy[ Index(ix,iy,0,j), Index( idx[0],idx[1], idx[2], idx[3] ) ] += 1
+                        globalDy[ Index(ix,iy,0,j), Index( idx[0],idx[1], idx[2], idx[3] ) ] += bc[0]
 
                         idx = Dupwind(beta[1], np.array([ix,iy,order,j]), np.array([ix,0,0,j]) )
-                        globalDy[ Index(ix,iy,order,j), Index( idx[0],idx[1], idx[2], idx[3] ) ] += 1
+                        globalDy[ Index(ix,iy,order,j), Index( idx[0],idx[1], idx[2], idx[3] ) ] += bc[order]
                     else:
                         idx = Dupwind(beta[1], np.array([ix,iy-1,order,j]), np.array([ix,iy,0,j]) )
-                        globalDy[ Index(ix,iy,0,j), Index( idx[0],idx[1], idx[2], idx[3] ) ] += -1
+                        globalDy[ Index(ix,iy,0,j), Index( idx[0],idx[1], idx[2], idx[3] ) ] += bc[0]
 
                         idx = Dupwind(beta[1], np.array([ix,iy,order,j]), np.array([ix,iy+1,0,j]) )
-                        globalDy[ Index(ix,iy,order,j), Index( idx[0],idx[1], idx[2], idx[3] ) ] += 1
+                        globalDy[ Index(ix,iy,order,j), Index( idx[0],idx[1], idx[2], idx[3] ) ] += bc[order]
 
 
     globalDx  = dFdu[0]*globalDx
@@ -272,7 +275,7 @@ def Index(ielx,jely, inode, jnode):
 if __name__ == "__main__":
     # Parameters for simulation
     order = 2;
-    numOfElx = 2; numOfEly = 2;
+    numOfElx = 5; numOfEly = 5;
     beta1 = 1; beta2 = 1;
     beta = np.array([beta1,beta2]);
     cflConst = 0.8; tmax = 1;
@@ -305,7 +308,9 @@ if __name__ == "__main__":
 
     #uold = np.arange(numOfElx*numOfEly*(order+1)*(order+1)).reshape([numOfElx,numOfEly,order+1,order+1])
 
-    uold = np.random.rand(numOfElx,numOfEly,order+1,order+1)
+
+    # initial condition is defined above around line 290
+    #uold = np.random.rand(numOfElx,numOfEly,order+1,order+1)
     uold = np.ones([numOfElx,numOfEly,order+1,order+1])
     qmat = np.zeros( numOfElx*numOfEly*(order+1)*(order+1) )
     rmat = np.zeros( numOfEly*numOfEly*(order+1)*(order+1) )
@@ -317,6 +322,10 @@ if __name__ == "__main__":
 
     qerror = qmat - qtrue.ravel()
     rerror = rmat - rtrue.ravel()
+
+    print("max(| q_error |) = ", np.amax(np.abs(qerror)))
+    print("max(| r_error |) = ", np.amax(np.abs(rerror)))
+
     currentTime = 0;
 
 
