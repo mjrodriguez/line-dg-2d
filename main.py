@@ -91,7 +91,7 @@ def ComputeRHS(numOfElx, numOfEly, detJ, invJ, G, D, W, beta, u):
                 # Fx = detJ*invJ*Flux(beta1,U)
                 Fx, Fy = ComputeReferenceFlux(detJ, invJ, beta, U)
                 temp = -np.matmul( np.matmul(np.transpose(D),W), Fx)
-
+                print(Fx)
                 ustar[0] = Upwind(beta[0], u[ix-1,iy,-1,i], u[ix,iy,0,i])
                 if (ix + 1 >= numOfElx):
                     # assuming periodic boundary conditions
@@ -154,6 +154,7 @@ def ComputeJacobian(order,totalNumOfEls, dFdu, invMassMatrix, DiffMatrix):
                     idx = Dupwind(beta[0], np.array([ix-1,iy,-1,i]), np.array([ix,iy,0,i]))
                     for ii in range(order+1):
                         globalDx[Index(ix,iy,ii,i), Index(idx[0],idx[1],idx[2],idx[3])] -= invMassMatrix[ii,0]
+
                     if (ix + 1 >= numOfElx):
                         # assuming periodic boundary conditions
                         idx = Dupwind(beta[0], np.array([ix,iy,-1,i]), np.array([0,iy,0,i]))
@@ -178,7 +179,7 @@ def ComputeJacobian(order,totalNumOfEls, dFdu, invMassMatrix, DiffMatrix):
     globalDy  = dFdu[1]*globalDy
     globalDif = globalDx + globalDy
 
-    if False:
+    if True:
         fig, ax = plt.subplots()
         ax.spy(globalDif)
         plt.show()
@@ -230,8 +231,8 @@ def Index(elx, ely, nodex, nodey):
 if __name__ == "__main__":
     # Parameters for simulation
     order = 3
-    numOfElx = 10; numOfEly = 10
-    beta1 = 1; beta2 = 2
+    numOfElx = 2; numOfEly = 2
+    beta1 = 1; beta2 = -2
     beta = np.array([beta1,beta2])
     cflConst = 0.8; tmax = 0.25
 
@@ -288,19 +289,19 @@ if __name__ == "__main__":
 
     # r = RHS(uold, numOfElx, numOfEly, detJ, invJ, G, D, W, beta)
     currentTime = 0
-    while currentTime < tmax:
-        print("time = ", currentTime)
-        dt = ComputeDt(order, dx, dy, beta, cflConst)
-        # print("time step = ", dt)
-
-        if currentTime + dt > tmax:
-            dt = tmax - currentTime
-
-        unew = RK4(dt, uold, numOfElx, numOfEly, detJ, invJ, G, D, W, beta)
-        uold = unew
-        currentTime += dt
-        print("max( |unew| ) = ", np.amax(np.abs(unew)))
-        PlotSolution(x,y,unew, fig)
+    # while currentTime < tmax:
+    #     print("time = ", currentTime)
+    #     dt = ComputeDt(order, dx, dy, beta, cflConst)
+    #     # print("time step = ", dt)
+    #
+    #     if currentTime + dt > tmax:
+    #         dt = tmax - currentTime
+    #
+    #     unew = RK4(dt, uold, numOfElx, numOfEly, detJ, invJ, G, D, W, beta)
+    #     uold = unew
+    #     currentTime += dt
+    #     print("max( |unew| ) = ", np.amax(np.abs(unew)))
+    #     PlotSolution(x,y,unew, fig)
 
     # uex  = ExactSolution(x,y,currentTime,beta)
     # uerror = np.amax( np.abs( uold -  uex) )
