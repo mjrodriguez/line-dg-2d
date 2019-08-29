@@ -1,7 +1,7 @@
 import numpy as np
 import gl
 import matplotlib.pyplot as plt
-
+from scipy import sparse
 from mpl_toolkits.mplot3d import Axes3D
 
 def ExactSolution(xnodes, ynodes, time, beta):
@@ -91,7 +91,10 @@ def ComputeRHS(numOfElx, numOfEly, detJ, invJ, G, D, W, beta, u):
                 # Fx = detJ*invJ*Flux(beta1,U)
                 Fx, Fy = ComputeReferenceFlux(detJ, invJ, beta, U)
                 temp = -np.matmul( np.matmul(np.transpose(D),W), Fx)
-                print(Fx)
+
+                # print("********** TEMP **************")
+                # print(temp)
+
                 ustar[0] = Upwind(beta[0], u[ix-1,iy,-1,i], u[ix,iy,0,i])
                 if (ix + 1 >= numOfElx):
                     # assuming periodic boundary conditions
@@ -103,6 +106,8 @@ def ComputeRHS(numOfElx, numOfEly, detJ, invJ, G, D, W, beta, u):
                 temp[order] +=  ComputeReferenceFlux(detJ, invJ, beta, ustar[1])[0]
 
                 q[ix,iy,:,i] = np.matmul(invMass,temp)
+                # print("********* qslice ************")
+                # print(q[ix,iy,:,i])
 
 
             # This loop computes the r = y derivative
@@ -145,11 +150,16 @@ def ComputeJacobian(order,totalNumOfEls, dFdu, invMassMatrix, DiffMatrix):
     globalDx  = np.kron(In, elementDx)
     globalDy  = np.kron(In, elementDy)
 
+    print("line dx = ")
+    print(dFdu[0])
+    print(dFdu[0]*lineDx)
+
     if True:
         # Implement boundary element conditions
         for ix in range(0,numOfElx):
             for iy in range(0,numOfEly):
                 for i in range(0,order+1):
+
                     # Computes the derivative in the x-direction
                     idx = Dupwind(beta[0], np.array([ix-1,iy,-1,i]), np.array([ix,iy,0,i]))
                     for ii in range(order+1):
@@ -230,11 +240,11 @@ def Index(elx, ely, nodex, nodey):
 
 if __name__ == "__main__":
     # Parameters for simulation
-    order = 3
+    order = 2
     numOfElx = 2; numOfEly = 2
-    beta1 = 1; beta2 = -2
+    beta1 = 1; beta2 = 1
     beta = np.array([beta1,beta2])
-    cflConst = 0.8; tmax = 0.25
+    cflConst = 0.8; tmax = 0.01
 
     print("Order = ", order)
     print("Nx = ", numOfElx, " Ny = ", numOfEly)
@@ -244,10 +254,15 @@ if __name__ == "__main__":
 
     # Nodes and quadrature points
     xnode = gl.lglnodes(order)
-    xint  = gl.lglnodes(3*order+1)
+    xint  = gl.lglnodes(3*order)
     W     = np.diag(xint[1])
     G,D   = gl.lagint(xnode[0], xint[0])
 
+    # print("-------  G -------------")
+    # print(G)
+    # print("----------  D ----------")
+    # print(D)
+    # print("--------------------")
     # Grid "generation" and initial conditiion
     uold,x,y,dx,dy = GenerateGrid(xnode[0], np.array([0,1]), np.array([0,1]), numOfElx, numOfEly, beta)
 
@@ -262,10 +277,14 @@ if __name__ == "__main__":
 
     betaTilde = detJ*np.matmul(invJ,beta)
 
-    globalD, Dx, Dy = ComputeJacobian(order, numOfElx*numOfEly, betaTilde, invMass, Diff)
+    Jac, Dx, Dy = ComputeJacobian(order, numOfElx*numOfEly, betaTilde, invMass, Diff)
 
     #uold = np.random.rand(numOfElx,numOfEly,order+1,order+1)
     # uold = np.ones([numOfElx,numOfEly,order+1,order+1])
+    sDy = sparse.csr_matrix(Dy)
+    sDx = sparse.csr_matrix(Dx)
+    sJac = sparse.csr_matrix(Jac)
+    print(sJac)
 
     qmat = np.zeros( numOfElx*numOfEly*(order+1)*(order+1) )
     rmat = np.zeros( numOfEly*numOfEly*(order+1)*(order+1) )
@@ -281,27 +300,27 @@ if __name__ == "__main__":
     print("max(| q_error |) = ", np.amax(np.abs(qerror)))
     print("max(| r_error |) = ", np.amax(np.abs(rerror)))
 
-    fig = plt.figure()
+    # fig = plt.figure()
     shp = [numOfElx,numOfEly,order+1,order+1]
     #PlotSolution(x,y,(qmat+rmat).reshape(shp),fig)
     #PlotSolution(x,y,(qtrue+rtrue).reshape(shp),fig)
     #PlotSolution(x,y,qtrue-qmat.reshape(shp),fig)
 
     # r = RHS(uold, numOfElx, numOfEly, detJ, invJ, G, D, W, beta)
-    currentTime = 0
-    # while currentTime < tmax:
-    #     print("time = ", currentTime)
-    #     dt = ComputeDt(order, dx, dy, beta, cflConst)
-    #     # print("time step = ", dt)
-    #
-    #     if currentTime + dt > tmax:
-    #         dt = tmax - currentTime
-    #
-    #     unew = RK4(dt, uold, numOfElx, numOfEly, detJ, invJ, G, D, W, beta)
-    #     uold = unew
-    #     currentTime += dt
-    #     print("max( |unew| ) = ", np.amax(np.abs(unew)))
-    #     PlotSolution(x,y,unew, fig)
+    currentTime = 1
+    while currentTime < tmax:
+        print("time = ", currentTime)
+        dt = ComputeDt(order, dx, dy, beta, cflConst)
+        # print("time step = ", dt)
+
+        if currentTime + dt > tmax:
+            dt = tmax - currentTime
+
+        unew = RK4(dt, uold, numOfElx, numOfEly, detJ, invJ, G, D, W, beta)
+        uold = unew
+        currentTime += dt
+        print("max( |unew| ) = ", np.amax(np.abs(unew)))
+        # PlotSolution(x,y,unew, fig)
 
     # uex  = ExactSolution(x,y,currentTime,beta)
     # uerror = np.amax( np.abs( uold -  uex) )
