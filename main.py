@@ -189,7 +189,7 @@ def ComputeJacobian(order,totalNumOfEls, dFdu, invMassMatrix, DiffMatrix):
     globalDy  = dFdu[1]*globalDy
     globalDif = globalDx + globalDy
 
-    if True:
+    if False:
         fig, ax = plt.subplots()
         ax.spy(globalDif)
         plt.show()
@@ -284,7 +284,7 @@ if __name__ == "__main__":
     sDy = sparse.csr_matrix(Dy)
     sDx = sparse.csr_matrix(Dx)
     sJac = sparse.csr_matrix(Jac)
-    print(sJac)
+    # print(sJac)
 
     qmat = np.zeros( numOfElx*numOfEly*(order+1)*(order+1) )
     rmat = np.zeros( numOfEly*numOfEly*(order+1)*(order+1) )
@@ -325,3 +325,36 @@ if __name__ == "__main__":
     # uex  = ExactSolution(x,y,currentTime,beta)
     # uerror = np.amax( np.abs( uold -  uex) )
     # print("max(| uerror|) = ", uerror)
+
+    onez = np.ones([(order+1)*(order+1),(order+1)*(order+1)])
+    In = np.eye(numOfElx*numOfEly)
+
+    nodalDGJac = np.kron(In, onez)
+    nodalDGJac[0:7:order+1,11:20:order+1] = 1
+    nodalDGJac[11:20:order+1,0:7:order+1] = 1
+    nodalDGJac[2:9:order+1,9:16:order+1] = 1
+    nodalDGJac[9:16:order+1,2:9:order+1] = 1
+
+    nodalDGJac[18:25:order+1, 30:37:order+1] = 1
+    nodalDGJac[30:37:order+1,18:25:order+1] = 1 
+    nodalDGJac[20:27:order+1,28:35:order+1] = 1
+    nodalDGJac[28:35:order+1,20:27:order+1] = 1
+
+    nodalDGJac[0:3,24:27] = 1
+    nodalDGJac[24:27,0:3] = 1 
+
+    nodalDGJac[9:12,33:37] = 1
+    nodalDGJac[33:37,9:12] = 1
+    nodalDGJac[6:9,18:21] = 1
+    nodalDGJac[18:21,6:9] = 1
+
+    nodalDGJac[15:18,28:31] = 1
+    nodalDGJac[28:31,15:18] = 1
+
+    fig, ax = plt.subplots()
+    ax.spy(nodalDGJac)
+    plt.savefig('nodal_dg_sparsity.eps', format='eps')
+    plt.show()
+
+
+    # print(nodalDGJac)
